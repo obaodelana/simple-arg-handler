@@ -31,7 +31,7 @@
     static char appName[STRING_MAX + 1] = "Terminal app";
 
     // Names of positional arguments in the correct order
-    static char positionalArgNames[MAX_ARGS][STRING_MAX + 1];
+    static char positionalArgNames[MAX_ARGS][LONG_NAME_MAX + 1];
 
     // Array of used indexes
     static int indexesUsed[MAX_ARGS];
@@ -145,7 +145,7 @@
         while (temp != NULL)
         {
             // If current arg has matching name, arg found
-            if (!strcasecmp(key, temp->shortName) || !strcasecmp(key, temp->longName))
+            if (!strcmp(key, temp->shortName) || !strcmp(key, temp->longName))
             {
                 // Set arg to return to current arg
                 arg = temp;
@@ -160,6 +160,16 @@
         return arg;
     }
 
+    static void InsertNewIndex(int insertIndex, int index)
+    {
+        // Go from the last index to insertion index
+        for (int i = usedCount; i >= insertIndex; i--)
+            // Shift elements backward and when at insertion index add new index
+            indexesUsed[i] = (i == insertIndex) ? index : indexesUsed[i - 1];
+        // Item added
+        usedCount++;
+    }
+
     static void AddNewIndex(int index, Arg *arg)
     {
         // Go through all assigned/used arguments
@@ -171,19 +181,14 @@
         }
 
         // Else, add new index to list
-        indexesUsed[usedCount++] = index;
-        
-        // If positional argument, put newly added index at the front of the list
-        if (!arg->optional)
-        {
-            // Save value of item at the front of the list
-            int temp = indexesUsed[positionalCount];
-            /*  Set value at the front of the list to be equal to positional index
-                (positionalCount keeps track of last position of positional item) */
-            indexesUsed[positionalCount] = index;
-            // Set last item to be equal to value saved
-            indexesUsed[usedCount - 1] = temp;
 
+        // Add optional argument to end of list
+        if (arg->optional)
+            indexesUsed[usedCount++] = index;
+        // Insert positional argument at the positionalCount index
+        else
+        {
+            InsertNewIndex(positionalCount, index);
             // Add positional arg name to list
             strcpy(positionalArgNames[positionalCount++], arg->longName);
         }
@@ -216,7 +221,7 @@
             while (temp->next != NULL)
             {
                 // If current arg has the same name as new arg
-                if (!strcasecmp(key, temp->shortName) || !strcasecmp(key, temp->longName))
+                if (!strcmp(key, temp->shortName) || !strcmp(key, temp->longName))
                 {
                     // If there are not pointing to the same memory address, free new arg
                     if (temp != arg)
@@ -302,6 +307,14 @@
                 FreeArgs();
                 exit(EXIT_FAILURE);
                 break;
+        }
+
+        // Memory allocation unsucessful
+        if (arg->value == NULL)
+        {
+            printf("simplearghandler: Error: Memory allocation failed :(\n");
+            FreeArgs();
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -434,6 +447,13 @@
                     {
                         // Allocate memory for a bool
                         bool *boolean = (bool *) malloc(sizeof(bool));
+                        // Allocation not successful
+                        if (boolean == NULL)
+                        {
+                            printf("simplearghandler: Error: Memory allocation failed :(\n");
+                            FreeArgs();
+                            exit(EXIT_FAILURE);
+                        }
                         // Set boolean to true
                         *boolean = true;
                         // Point arg's value to boolean
@@ -485,10 +505,28 @@
                 }
             }
         }
+
+        // If positional arguments are left
+        if (positionalsAdded < positionalCount)
+        {
+            printf("%s\n: Error: The following arguments are required: ", appName);
+            // List all required arguments
+            for (int i = positionalsAdded; i < positionalCount; i++)
+                printf("%s ", positionalArgNames[i]);
+            printf("\n");
+            PrintUsage();
+        }
     }
 
     void* GetArg(const char *key)
     {
+        if (!initialised)
+        {
+            printf("simplearghandler: Error: Call InitArgs() before accessing arguments!\n");
+            FreeArgs();
+            exit(EXIT_FAILURE);
+        }
+
         return SearchTable(key);
     }
 #endif
