@@ -9,8 +9,8 @@
 
     // Arg hash table max (numbers + letters)
     #define MAX_ARGS 10 + 26
-    // Short arg name max e.g. la
-    #define SHORT_NAME_MAX 2
+    // Short arg name max e.g. vEt
+    #define SHORT_NAME_MAX 3
     // Long arg name max e.g. ilovecodingincandcppppppp
     #define LONG_NAME_MAX 25
     // Max characters for string value
@@ -22,14 +22,14 @@
     // Is InitArgs() called?
     static bool initialised = false;
 
-    static char appName[STRING_MAX + 1] = "app";
+    static char appName[STRING_MAX + 1] = "app", appDesc[STRING_MAX + 1] = "Terminal app";
 
     // Names of positional arguments in the correct order
     static char positionalArgNames[MAX_ARGS][LONG_NAME_MAX + 1];
 
     // Array of used indexes
     static int indexesUsed[MAX_ARGS];
-    // Count of used indexex, count of positional arguments
+    // Count of used indexes, count of positional arguments
     static int usedCount = 0, positionalCount = 0;
 
     // Supported types
@@ -77,7 +77,8 @@
 
     static void PrintAndQuit(const char *text)
     {
-        if (strlen(text) > 1) printf("%s\n", text);
+        // If text is not empty, print it
+        if (text[0] != '\0') printf("%s\n", text);
         FreeArgs();
         exit(EXIT_FAILURE);
     }
@@ -118,9 +119,42 @@
                 current = current->next;
             }
         }
-        printf("\n");
+        // Add help to usable args
+        printf("[-h --help]\n");
 
-        PrintAndQuit(" ");
+        PrintAndQuit("");
+    }
+
+    static void PrintHelp(void)
+    {
+        printf("%s\n\n", appDesc);
+
+        printf("Positional arguments:\n");
+        // Print positional arguments
+        for (int i = 0; i < positionalCount; i++)
+        {
+            Arg *posArg = args[indexesUsed[i]];
+            while (posArg != NULL)
+            {
+                printf("  %s\n\t%s\n", posArg->longName, posArg->help);
+                posArg = posArg->next;
+            }
+        }
+
+        printf("\nOptional arguments:\n");
+        // Print optional arguments
+        for (int i = positionalCount; i < usedCount; i++)
+        {
+            Arg *optArg = args[indexesUsed[i]];
+            while (optArg != NULL)
+            {
+                printf("  -%s, --%s\n\t%s\n", optArg->shortName, optArg->longName, optArg->help);
+                optArg = optArg->next;
+            }
+        }
+
+        printf("\n");
+        PrintUsage();
     }
 
     // For args that have a different starting letter for short and long name
@@ -148,7 +182,7 @@
         // If first character is not alphanumeric, return NULL
         if (!isalnum(key[0])) return NULL;
 
-        // Arg for traversing
+        // Get arg based on first letter
         Arg *temp = args[GetTableIndex(key[0])];
         while (temp != NULL)
         {
@@ -160,7 +194,7 @@
             temp = temp->next;
         }
 
-        // If not arg found, try doing a linear search
+        // If arg not found, try doing a linear search
         return LinearSearchTable(key);
     }
 
@@ -219,7 +253,7 @@
                 if (!strcmp(key, temp->shortName) || !strcmp(key, temp->longName))
                 {
                     printf("simplearghandler: Error: Duplicate name found: %s\n", key);
-                    PrintAndQuit(" ");
+                    PrintAndQuit("");
                 }
 
                 // Next arg
@@ -239,27 +273,11 @@
         // Set value of arg based on arg type
         switch (arg->argType)
         {
-            case ARG_INT:
-                // If first letter is not a digit, quit
-                if (!isdigit(value[0]) && value[0] != '-')
+            case ARG_INT: case ARG_FLOAT:
+                // If first letter is not a digit, then quit
+                if (!isdigit(value[0]))
                 {
-                    printf("%s: Error: -%s/--%s: invalid int value: %s\n", appName, arg->shortName, arg->longName, value);
-                    PrintUsage();
-                }
-
-                // Else, allocate memory for an int
-                int *integer = (int *) malloc(sizeof(int));
-                // Set its value
-                *integer = atoi(value);
-                // Point arg's value field to new memory address
-                arg->value = integer;
-                break;
-
-            case ARG_FLOAT:
-                // If first letter is not a digit or a decimal sign, quit
-                if (!isdigit(value[0]) && (value[0] != '.' || value[0] != '-'))
-                {
-                    printf("%s: Error: -%s/--%s: invalid float value: %s\n", appName, arg->shortName, arg->longName, value);
+                    printf("%s: Error: -%s/--%s: invalid number value: %s\n", appName, arg->shortName, arg->longName, value);
                     PrintUsage();
                 }
 
@@ -271,28 +289,21 @@
                 arg->value = floating;
                 break;
 
-            case ARG_CHAR:
-                // If string contains more than one letter, quit
-                if (strlen(value) > 1)
+            case ARG_CHAR: case ARG_STRING:
+                // If char contains more than one letter, quit
+                if (arg->argType == ARG_CHAR && strlen(value) > 1)
                 {
                     printf("%s: Error: -%s/--%s: invalid char value: %s\n", appName, arg->shortName, arg->longName, value);
                     PrintUsage();
                 }
 
                 // Else, allocate memory for a char
-                char *character = (char *) malloc(sizeof(char));
+                char *string = (char *) malloc(sizeof(char) * ((arg->argType == ARG_STRING) ? (strlen(value) + 1) : 1));
                 // Set its value
-                *character = value[0];
-                // Point arg's value field to new memory address
-                arg->value = character;
-                break;
-
-            case ARG_STRING:
-                ; // A label has to be followed by a statement, hence the semi-colon (a declaration is not a statement)
-                // Allocate memory for a string of adequate size
-                char *string = (char *) malloc(sizeof(char) * (strlen(value) + 1));
-                // Set its value
-                strcpy(string, value);
+                if (arg->argType == ARG_CHAR)
+                    *string = value[0];
+                else
+                    strcpy(string, value);
                 // Point arg's value field to new memory address
                 arg->value = string;
                 break;
@@ -308,6 +319,30 @@
             PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
     }
 
+    static void SetupArg(Arg *arg, const char *shortName, const char *longName, const char *help, int argType, bool optional)
+    {
+        // If allocation successful
+        if (arg != NULL)
+        {
+            // Set available values
+            // Check if shortName is given
+            if (shortName[0] != '\0')
+                strcpy(arg->shortName, shortName);
+            strcpy(arg->longName, longName);
+            strcpy(arg->help, help);
+            arg->argType = argType;
+            arg->optional = optional;
+            arg->value = NULL;
+            arg->next = NULL;
+
+            // Add to table using name as the key
+            AddToTable(arg, optional ? arg->shortName : arg->longName);
+        }
+        // Allocation not successful
+        else
+            PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
+    }
+
     void AddOptionalArg(const char *shortName, const char *longName, const char *help, int argType)
     {
         if (initialised)
@@ -319,40 +354,22 @@
             char startText[11] = "Long name";
             if (strlen(shortName) > SHORT_NAME_MAX) strcpy(startText, "Short name");
             else if (strlen(help) > STRING_MAX) strcpy(startText, "Help text");
-            
             int maxNum = (!strcmp(startText, "Long name")) ? LONG_NAME_MAX : (!strcmp(startText, "Help text")) ? STRING_MAX : SHORT_NAME_MAX;
 
             printf("simplearghandler: Error: %s is too long! Max is %i characters\n", startText, maxNum);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
-        // If name doesn't start with a letter or number
-        if (!isalnum(shortName[0]) || !isalnum(longName[0]))
+        // If name doesn't start with a letter or number or contains a space
+        if (!isalnum(shortName[0]) || !isalnum(longName[0]) || strchr(shortName, ' ') != NULL || strchr(longName, ' ') != NULL)
         {
-            printf("simplearghandler: Error: Name (%s) should only contain letters and numbers\n", (!isalnum(shortName[0]) ? shortName : longName));
-            PrintAndQuit(" ");
+            printf("simplearghandler: Error: Name (%s) should only contain letters and numbers, and no spaces\n", (!isalnum(shortName[0]) ? shortName : longName));
+            PrintAndQuit("");
         }
 
         // Allocate memory for a new arg
         Arg *arg = (Arg *) calloc(1, sizeof(Arg));
-        if (arg != NULL)
-        {
-            // Set available values
-            strcpy(arg->shortName, shortName);
-            strcpy(arg->longName, longName);
-            strcpy(arg->help, help);
-            arg->argType = argType;
-            arg->optional = true;
-            arg->value = NULL;
-            arg->next = NULL;
-
-            // Add to table use both short and long names
-            AddToTable(arg, arg->shortName);
-        }
-
-        // Allocation not successful
-        else
-            PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
+        SetupArg(arg, shortName, longName, help, argType, true);
     }
 
     void AddPositionalArg(const char *name, const char *help, int argType)
@@ -365,50 +382,32 @@
         {
             char startText[11] = "Name";
             if (strlen(help) > STRING_MAX) strcpy(startText, "Help text");
-            
             int maxNum = (!strcmp(startText, "Name")) ? LONG_NAME_MAX : STRING_MAX;
 
             printf("simplearghandler: Error: %s is too long! Max is %i characters\n", startText, maxNum);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         // If name doesn't start with a letter or number
         if (!isalnum(name[0]))
         {
             printf("simplearghandler: Error: Name (%s) should only contain letters and numbers\n", name);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         // Allocate memory for a new arg
         Arg *arg = (Arg *) calloc(1, sizeof(Arg));
-        // If allocation successful
-        if (arg != NULL)
-        {
-            // Set available values
-            strcpy(arg->shortName, " ");
-            strcpy(arg->longName, name);
-            strcpy(arg->help, help);
-            arg->argType = argType;
-            arg->optional = false;
-            arg->value = NULL;
-            arg->next = NULL;
-
-            // Add to table using longName as the key
-            AddToTable(arg, arg->longName);
-        }
-
-        // Allocation not successful
-        else
-            PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
+        SetupArg(arg, "", name, help, argType, false);
     }
 
-    void InitArgs(int argc, const char* argv[])
+    void InitArgs(int argc, const char* argv[], const char* appDescription)
     {
         if (initialised)
             PrintAndQuit("simplearghandler: Error: Can't initialise more than once");
 
-        // Get app name
+        // Get app name and descrption
         strcpy(appName, argv[0]);
+        strcpy(appDesc, appDescription);
 
         int positionalsAdded = 0;
         // Go through all arguments excluding first one (app name)
@@ -417,8 +416,13 @@
             // Optional argument
             if (argv[i][0] == '-' && argv[i][GetHyphenEnd(argv[i])] != '\0')
             {
+                int hypenEnd = GetHyphenEnd(argv[i]);
+                // If --help or -h is used, print help
+                if (!strcmp(&argv[i][hypenEnd], "help") || !strcmp(&argv[i][hypenEnd], "h"))
+                    PrintHelp();
+
                 // Search table using text after hyphen
-                Arg *arg = SearchTable(&argv[i][GetHyphenEnd(argv[i])]);
+                Arg *arg = SearchTable(&argv[i][hypenEnd]);
                 // If arg found
                 if (arg != NULL)
                 {
@@ -517,16 +521,34 @@
         if (!HasArg(key))
         {
             printf("simplearghandler: Error: %s not found\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         else if (arg->argType != ARG_INT)
         {
             printf("simplearghandler: Error: %s is not of type INT!\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
-        return *((int *) arg->value);
+        return (int) *((float *) arg->value);
+    }
+
+    float GetFloatArg(const char *key)
+    {
+        Arg *arg = SearchTable(key);
+        if (!HasArg(key))
+        {
+            printf("simplearghandler: Error: %s not found\n", key);
+            PrintAndQuit("");
+        }
+
+        else if (arg->argType != ARG_FLOAT)
+        {
+            printf("simplearghandler: Error: %s is not of type FLOAT!\n", key);
+            PrintAndQuit("");
+        }
+
+        return *((float *) arg->value);
     }
 
     // Returns true if arg is used else false
@@ -536,13 +558,13 @@
         if (arg == NULL)
         {
             printf("simplearghandler: Error: %s not found\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         else if (arg->argType != ARG_BOOL)
         {
             printf("simplearghandler: Error: %s is not of type BOOL!\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         return arg->value != NULL;
@@ -554,34 +576,16 @@
         if (!HasArg(key))
         {
             printf("simplearghandler: Error: %s not found\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         else if (arg->argType != ARG_CHAR)
         {
             printf("simplearghandler: Error: %s is not of type CHAR!\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         return ((char *) arg->value)[0];
-    }
-
-    float GetFloatArg(const char *key)
-    {
-        Arg *arg = SearchTable(key);
-        if (!HasArg(key))
-        {
-            printf("simplearghandler: Error: %s not found\n", key);
-            PrintAndQuit(" ");
-        }
-
-        else if (arg->argType != ARG_FLOAT)
-        {
-            printf("simplearghandler: Error: %s is not of type FLOAT!\n", key);
-            PrintAndQuit(" ");
-        }
-
-        return *((float *) arg->value);
     }
 
     const char* GetStringArg(const char *key)
@@ -590,13 +594,13 @@
         if (!HasArg(key))
         {
             printf("simplearghandler: Error: %s not found\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         else if (arg->argType != ARG_STRING)
         {
             printf("simplearghandler: Error: %s is not of type STRING/CHAR*!\n", key);
-            PrintAndQuit(" ");
+            PrintAndQuit("");
         }
 
         return (const char *) arg->value;
