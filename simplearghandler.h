@@ -8,27 +8,30 @@
     #include <ctype.h>
 
     // Arg hash table max (numbers + letters)
-    #define MAX_ARGS 10 + 26
+    #define SAH_MAX_ARGS 10 + 26
     // Short arg name max e.g. vEt
-    #define SHORT_NAME_MAX 3
+    #define SAH_SHORT_NAME_MAX 3
     // Long arg name max e.g. ilovecodingincandcppppppp
-    #define LONG_NAME_MAX 25
+    #define SAH_LONG_NAME_MAX 25
     // Max characters for string value
-    #define STRING_MAX 100
+    #define SAH_STRING_MAX 100
 
     // Return index in hash table (for digits return 0 - 9, for letters return 10 - 36)
-    #define GetTableIndex(key) (isdigit(key) ? (key - '0') : ((tolower(key) - 'a') + 10))
+    #define SAH_GetTableIndex(key) (isdigit(key) ? (key - '0') : ((tolower(key) - 'a') + 10))
+    // Allocate memory of 'size' to ptr of 'type' and assign 'value' to it
+    #define SAH_Alloc(type, ptr, size, value) type *ptr = (type *) malloc(size);\
+                                            if (ptr != NULL) *ptr = value;\
+                                            else PrintAndQuit("simplearghandler: Error: Memory allocation failed :(")
 
     // Is InitArgs() called?
     static bool initialised = false;
 
-    static char appName[STRING_MAX + 1] = "app", appDesc[STRING_MAX + 1] = "Terminal app";
-
+    static char appName[SAH_STRING_MAX + 1] = "app", appDesc[SAH_STRING_MAX + 1] = "Terminal app";
     // Names of positional arguments in the correct order
-    static char positionalArgNames[MAX_ARGS][LONG_NAME_MAX + 1];
+    static char positionalArgNames[SAH_MAX_ARGS][SAH_LONG_NAME_MAX + 1];
 
     // Array of used indexes
-    static int indexesUsed[MAX_ARGS];
+    static int indexesUsed[SAH_MAX_ARGS];
     // Count of used indexes, count of positional arguments
     static int usedCount = 0, positionalCount = 0;
 
@@ -38,7 +41,7 @@
     typedef struct Arg
     {
         // shortName: h, longName: help, help: "Text to show in help mode"
-        char shortName[SHORT_NAME_MAX + 1], longName[LONG_NAME_MAX + 1], help[STRING_MAX + 1];
+        char shortName[SAH_SHORT_NAME_MAX + 1], longName[SAH_LONG_NAME_MAX + 1], help[SAH_STRING_MAX + 1];
         // Pointer to value
         void *value;
         // Type from enum
@@ -50,7 +53,7 @@
     } Arg;
 
     // Hash table for all arguments
-    static Arg *args[MAX_ARGS];
+    static Arg *args[SAH_MAX_ARGS];
 
     void FreeArgs(void)
     {
@@ -95,7 +98,7 @@
     static void PrintUsage(void)
     {
         // Keeps track of last string printed, string to be printed
-        char usageText[STRING_MAX + 1];
+        char usageText[SAH_STRING_MAX + 1];
         
         printf("usage: %s ", appName);
         // Go through all assigned/used arguments
@@ -119,8 +122,7 @@
                 current = current->next;
             }
         }
-        // Add help to usable args
-        printf("[-h --help]\n");
+        printf("\n");
 
         PrintAndQuit("");
     }
@@ -129,27 +131,24 @@
     {
         printf("%s\n\n", appDesc);
 
-        printf("Positional arguments:\n");
-        // Print positional arguments
-        for (int i = 0; i < positionalCount; i++)
+        // First positional arguments, if any
+        if (positionalCount > 0) printf("Positional arguments:\n");
+        // Print all arguments
+        for (int i = 0; i < usedCount; i++)
         {
-            Arg *posArg = args[indexesUsed[i]];
-            while (posArg != NULL)
+            // When finished printing pos args, print opt args
+            if (i == positionalCount) printf("Optional arguments:\n");
+            Arg *arg = args[indexesUsed[i]];
+            while (arg != NULL)
             {
-                printf("  %s\n\t%s\n", posArg->longName, posArg->help);
-                posArg = posArg->next;
-            }
-        }
+                // Print pos args in this format ( name  help)
+                if (i < positionalCount)
+                    printf("  %s\t\t%s\n", arg->longName, arg->help);
+                // Print opt args in this format ( --sName, --lName newline  help)
+                else
+                    printf("  -%s, --%s\n\t%s\n", arg->shortName, arg->longName, arg->help);
 
-        printf("\nOptional arguments:\n");
-        // Print optional arguments
-        for (int i = positionalCount; i < usedCount; i++)
-        {
-            Arg *optArg = args[indexesUsed[i]];
-            while (optArg != NULL)
-            {
-                printf("  -%s, --%s\n\t%s\n", optArg->shortName, optArg->longName, optArg->help);
-                optArg = optArg->next;
+                arg = arg->next;
             }
         }
 
@@ -183,7 +182,7 @@
         if (!isalnum(key[0])) return NULL;
 
         // Get arg based on first letter
-        Arg *temp = args[GetTableIndex(key[0])];
+        Arg *temp = args[SAH_GetTableIndex(key[0])];
         while (temp != NULL)
         {
             // If current arg has matching name, arg found
@@ -237,7 +236,7 @@
     static void AddToTable(Arg *arg, const char *key)
     {
         // Get index based on first character
-        int tableIndex = GetTableIndex(key[0]);
+        int tableIndex = SAH_GetTableIndex(key[0]);
 
         // If current index is empty
         if (args[tableIndex] == NULL)
@@ -246,19 +245,19 @@
         else
         {
             Arg *temp = args[tableIndex];
-            // Look for null arg
-            while (temp->next != NULL)
+            // Look for null arg (using a do-while loop because I want the check-duplicate code to run at least once)
+            do 
             {
-                // If current arg has the same name as new arg
-                if (!strcmp(key, temp->shortName) || !strcmp(key, temp->longName))
+                // If current arg has the same name as new arg (duplicate check)
+                if (!strcmp(arg->shortName, temp->shortName) || !strcmp(arg->longName, temp->longName))
                 {
-                    printf("simplearghandler: Error: Duplicate name found: %s\n", key);
+                    printf("simplearghandler: Error: Duplicate name (%s/%s) found: %s/%s\n", temp->shortName, temp->longName, arg->shortName, arg->longName);
                     PrintAndQuit("");
                 }
 
-                // Next arg
-                temp = temp->next;
-            }
+                // Go to next arg if next arg is not null
+                if (temp->next != NULL) temp = temp->next;
+            } while (temp->next != NULL);
 
             // Set null arg
             temp->next = arg;
@@ -280,11 +279,9 @@
                     printf("%s: Error: -%s/--%s: invalid number value: %s\n", appName, arg->shortName, arg->longName, value);
                     PrintUsage();
                 }
-
-                // Else, allocate memory for a float
-                float *floating = (float *) malloc(sizeof(float));
-                // Set its value
-                *floating = atof(value);
+                
+                // Else, allocate memory for a float and set it's value
+                SAH_Alloc(float, floating, sizeof(float), atof(value));
                 // Point arg's value field to new memory address
                 arg->value = floating;
                 break;
@@ -297,13 +294,17 @@
                     PrintUsage();
                 }
 
-                // Else, allocate memory for a char
-                char *string = (char *) malloc(sizeof(char) * ((arg->argType == ARG_STRING) ? (strlen(value) + 1) : 1));
-                // Set its value
-                if (arg->argType == ARG_CHAR)
-                    *string = value[0];
-                else
-                    strcpy(string, value);
+                // Make sure string is a reasonable size
+                else if(arg->argType == ARG_STRING && strlen(value) > SAH_STRING_MAX)
+                {
+                    printf("%s: Error: -%s/--%s: String too long: %s\n", appName, arg->shortName, arg->longName, value);
+                    PrintUsage();
+                }
+
+                // Else, allocate memory for a string/char and set it's value
+                SAH_Alloc(char, string, sizeof(char) * (strlen(value) + 1), value[0]);
+                // If a string, copy value to address
+                if (arg->argType == ARG_STRING) strcpy(string, value);
                 // Point arg's value field to new memory address
                 arg->value = string;
                 break;
@@ -313,10 +314,6 @@
                 PrintAndQuit("simplearghandler: Error: Unknown argument type\nArgument types: ARG_INT, ARG_BOOL, ARG_CHAR, ARG_FLOAT, ARG_STRING");
                 break;
         }
-
-        // Memory allocation unsucessful
-        if (arg->value == NULL)
-            PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
     }
 
     static void SetupArg(Arg *arg, const char *shortName, const char *longName, const char *help, int argType, bool optional)
@@ -324,10 +321,8 @@
         // If allocation successful
         if (arg != NULL)
         {
-            // Set available values
-            // Check if shortName is given
-            if (shortName[0] != '\0')
-                strcpy(arg->shortName, shortName);
+            // Set shortName if given
+            strcpy(arg->shortName, (shortName[0] != '\0') ? shortName : "");
             strcpy(arg->longName, longName);
             strcpy(arg->help, help);
             arg->argType = argType;
@@ -348,13 +343,17 @@
         if (initialised)
             PrintAndQuit("simplearghandler: Error: Can't add more arguments, InitArgs() has already been called");
 
+        // If names are empty
+        if (shortName[0] == '\0' || longName[0] == '\0')
+            PrintAndQuit("Name can't be empty!");
+
         // If text exceeds max, print error
-        if (strlen(shortName) > SHORT_NAME_MAX || strlen(longName) > LONG_NAME_MAX || strlen(help) > STRING_MAX)
+        if (strlen(shortName) > SAH_SHORT_NAME_MAX || strlen(longName) > SAH_LONG_NAME_MAX || strlen(help) > SAH_STRING_MAX)
         {
             char startText[11] = "Long name";
-            if (strlen(shortName) > SHORT_NAME_MAX) strcpy(startText, "Short name");
-            else if (strlen(help) > STRING_MAX) strcpy(startText, "Help text");
-            int maxNum = (!strcmp(startText, "Long name")) ? LONG_NAME_MAX : (!strcmp(startText, "Help text")) ? STRING_MAX : SHORT_NAME_MAX;
+            if (strlen(shortName) > SAH_SHORT_NAME_MAX) strcpy(startText, "Short name");
+            else if (strlen(help) > SAH_STRING_MAX) strcpy(startText, "Help text");
+            int maxNum = (!strcmp(startText, "Long name")) ? SAH_LONG_NAME_MAX : (!strcmp(startText, "Help text")) ? SAH_STRING_MAX : SAH_SHORT_NAME_MAX;
 
             printf("simplearghandler: Error: %s is too long! Max is %i characters\n", startText, maxNum);
             PrintAndQuit("");
@@ -377,12 +376,16 @@
         if (initialised)
             PrintAndQuit("simplearghandler: Error: Can't add more arguments, InitArgs() has already been called");
 
+        // If name is empty
+        if (name[0] == '\0')
+            PrintAndQuit("Name can't be empty!");
+
         // If text exceeds max, print error
-        if (strlen(name) > LONG_NAME_MAX || strlen(help) > STRING_MAX)
+        if (strlen(name) > SAH_LONG_NAME_MAX || strlen(help) > SAH_STRING_MAX)
         {
             char startText[11] = "Name";
-            if (strlen(help) > STRING_MAX) strcpy(startText, "Help text");
-            int maxNum = (!strcmp(startText, "Name")) ? LONG_NAME_MAX : STRING_MAX;
+            if (strlen(help) > SAH_STRING_MAX) strcpy(startText, "Help text");
+            int maxNum = (!strcmp(startText, "Name")) ? SAH_LONG_NAME_MAX : SAH_STRING_MAX;
 
             printf("simplearghandler: Error: %s is too long! Max is %i characters\n", startText, maxNum);
             PrintAndQuit("");
@@ -409,6 +412,9 @@
         strcpy(appName, argv[0]);
         strcpy(appDesc, appDescription);
 
+        // Help arg
+        AddOptionalArg("h", "help", "Show this help message", ARG_BOOL);
+
         int positionalsAdded = 0;
         // Go through all arguments excluding first one (app name)
         for (int i = 1; i < argc; i++)
@@ -429,13 +435,8 @@
                     // If argument is of type bool
                     if (arg->argType == ARG_BOOL)
                     {
-                        // Allocate memory for a bool
-                        bool *boolean = (bool *) malloc(sizeof(bool));
-                        // Allocation not successful
-                        if (boolean == NULL)
-                            PrintAndQuit("simplearghandler: Error: Memory allocation failed :(");
-                        // Set boolean to true
-                        *boolean = true;
+                        // Allocate memory for a bool and set it's value
+                        SAH_Alloc(bool, boolean, sizeof(bool), true);
                         // Point arg's value to boolean
                         arg->value = boolean;
                     }
@@ -449,7 +450,6 @@
                             printf("%s: Error: -%s/--%s: expected one argument\n", appName, arg->shortName, arg->longName);
                             PrintUsage();
                         }
-
                         // Else set arg's value
                         SetValue(arg, argv[++i]);
                     }
@@ -470,18 +470,9 @@
                 if (positionalsAdded < positionalCount)
                 {
                     // Search table for positional arg based on index
-                    Arg *arg = SearchTable(positionalArgNames[positionalsAdded]);
+                    Arg *arg = SearchTable(positionalArgNames[positionalsAdded++]);
                     // If arg found
-                    if (arg != NULL)
-                    {
-                        // Set it's value
-                        SetValue(arg, argv[i]);
-                        // Positional added
-                        positionalsAdded++;   
-                    }
-                    // Shouldn't ever happen
-                    else
-                        printf("simplearghandler: Error: No positional argument found\n");
+                    if (arg != NULL) SetValue(arg, argv[i]);
                 }
 
                 // If no positional arguments are left, or there were none
@@ -551,7 +542,7 @@
         return *((float *) arg->value);
     }
 
-    // Returns true if arg is used else false
+    // Returns true if arg value is set else false
     bool GetBoolArg(const char *key)
     {
         Arg *arg = SearchTable(key);
