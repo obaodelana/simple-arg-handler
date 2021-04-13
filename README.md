@@ -50,10 +50,12 @@ int main(int argc, const char *argv[])
     if (fileToPrint != NULL)
     {
         bool showNumber = GetBoolArg("n");
+        // Check if l/max-lines and w/wait arguments were set
         bool lineMax = HasArg("max-lines"), wait = HasArg("w");
         int ch, n = 1, maxLines = 0;
         float waitTime = 0.0f;
-
+        
+        // If the arguments were set, get argument values
         if (lineMax) maxLines = GetIntArg("max-lines");
         if (wait) waitTime = GetFloatArg("w");
         
@@ -66,11 +68,11 @@ int main(int argc, const char *argv[])
             if (ch == '\n') n++;
             // Print character
             printf("%c", ch);
-            // Stop at specified max
+            // Stop at specified max, if allowed
             if (lineMax && n > maxLines) break;
             // Show line number at the beginning of a new line, if allowed
             if (ch == '\n' && showNumber) printf("%i ", n);
-            // If wait is allowed and new line, wait for specified amount of time
+            // If wait is allowed and current character is a new line, wait for specified amount of time
             if (wait && ch == '\n') Wait(waitTime);
         }
         fclose(fileToPrint);
